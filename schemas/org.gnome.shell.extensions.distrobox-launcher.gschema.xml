@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.distrobox-launcher"
+          path="/org/gnome/shell/extensions/distrobox-launcher/">
+    <key name="terminal" type="s">
+      <default>'ptyxis'</default>
+      <summary>Terminal emulator</summary>
+      <description>The terminal command to use when opening a distrobox</description>
+    </key>
+    <key name="refresh-interval" type="i">
+      <default>15</default>
+      <summary>Refresh interval</summary>
+      <description>How often to check distrobox status in seconds</description>
+      <range min="5" max="300"/>
+    </key>
+    <key name="show-icon-when-empty" type="b">
+      <default>false</default>
+      <summary>Show icon when no distroboxes</summary>
+      <description>Whether to show the panel icon when there are no distroboxes</description>
+    </key>
+  </schema>
+</schemalist>

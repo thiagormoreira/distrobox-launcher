@@ -1,0 +1,21 @@
+/* Distrobox Launcher Extension Styles */
+
+/* Panel icon */
+.distrobox-indicator {
+    padding: 0 4px;
+}
+
+/* Running status color */
+.status-running {
+    color: #26a269;
+}
+
+/* Stopped status color */
+.status-stopped {
+    color: #77767b;
+}
+
+/* Menu item labels */
+.error-label {
+    color: #c01c28;
+}
