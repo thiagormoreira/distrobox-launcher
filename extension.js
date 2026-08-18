@@ -8,6 +8,7 @@ import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
+import * as ModalDialog from 'resource:///org/gnome/shell/ui/modalDialog.js';
 
 // Maps each supported terminal to how it expects to receive the command to run.
 const TERMINAL_LAUNCHERS = {
@@ -60,104 +61,60 @@ class DistroboxIndicator extends PanelMenu.Button {
             this.menu.addMenuItem(emptyItem);
         } else {
             for (const container of this._containers) {
-                const item = new PopupMenu.PopupMenuItem(container.name);
+                // PopupSubMenuMenuItem expands its submenu inline, fully
+                // managed by GNOME Shell — no manual actor/stage parenting
+                // needed (a hand-created PopupMenu.PopupMenu here crashes
+                // with "this.actor.get_parent() is null" on open()).
+                const item = new PopupMenu.PopupSubMenuMenuItem(container.name, true);
+                item.icon.gicon = container.running ? this._iconRunning : this._iconIdle;
+                item.icon.icon_size = 14;
 
-                // Container for status dot + action button, aligned to the right
-                const actionsBox = new St.BoxLayout({
-                    x_expand: true,
-                    x_align: Clutter.ActorAlign.END,
-                    y_align: Clutter.ActorAlign.CENTER,
-                    style: 'spacing: 8px;',
+                const enterItem = new PopupMenu.PopupMenuItem('Enter');
+                enterItem.connect('activate', () => {
+                    this._enterContainer(container.name);
                 });
+                item.menu.addMenuItem(enterItem);
 
-                // Status indicator — plain colored dot
-                const statusDot = new St.Widget({
-                    style: `width: 8px; height: 8px; border-radius: 4px; background-color: ${container.running ? '#26a269' : '#77767b'};`,
-                    y_align: Clutter.ActorAlign.CENTER,
-                });
-                actionsBox.add_child(statusDot);
-
-                // Play/Stop toggle button
-                const actionIcon = new St.Icon({
-                    icon_name: container.running ? 'media-playback-stop-symbolic' : 'media-playback-start-symbolic',
-                    icon_size: 14,
-                });
-                const actionButton = new St.Button({
-                    child: actionIcon,
-                    y_align: Clutter.ActorAlign.CENTER,
-                    reactive: true,
-                    track_hover: true,
-                });
-                actionButton.connect('clicked', () => {
+                const toggleItem = new PopupMenu.PopupMenuItem(container.running ? 'Stop' : 'Start');
+                toggleItem.connect('activate', () => {
                     if (container.running) {
                         this._stopContainer(container.name);
                     } else {
                         this._startContainer(container.name);
                     }
                 });
-                actionsBox.add_child(actionButton);
+                item.menu.addMenuItem(toggleItem);
 
-                // More options button (three vertical dots)
-                const moreIcon = new St.Label({
-                    text: '⋮',
-                    style: 'font-size: 14px;',
-                });
-                const moreButton = new St.Button({
-                    child: moreIcon,
-                    y_align: Clutter.ActorAlign.CENTER,
-                    reactive: true,
-                    track_hover: true,
-                });
-                actionsBox.add_child(moreButton);
+                item.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
-                item.add_child(actionsBox);
-
-                // Click to enter
-                item.connect('activate', () => {
-                    this._enterContainer(container.name);
+                const copyItem = new PopupMenu.PopupMenuItem('Copy name');
+                copyItem.connect('activate', () => {
+                    this._copyToClipboard(container.name);
                 });
+                item.menu.addMenuItem(copyItem);
+
+                const upgradeItem = new PopupMenu.PopupMenuItem('Upgrade');
+                upgradeItem.connect('activate', () => {
+                    this._upgradeContainer(container.name);
+                });
+                item.menu.addMenuItem(upgradeItem);
+
+                const ephemeralItem = new PopupMenu.PopupMenuItem('Ephemeral');
+                ephemeralItem.connect('activate', () => {
+                    this._ephemeralContainer(container.name);
+                });
+                item.menu.addMenuItem(ephemeralItem);
+
+                item.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+
+                const deleteItem = new PopupMenu.PopupMenuItem('Delete');
+                deleteItem.label.add_style_class_name('error-label');
+                deleteItem.connect('activate', () => {
+                    this._showDeleteConfirmation(container.name);
+                });
+                item.menu.addMenuItem(deleteItem);
 
                 this.menu.addMenuItem(item);
-
-                // Create options menu for this container
-                moreButton.connect('clicked', (btn) => {
-                    const optionsMenu = new PopupMenu.PopupMenu(btn, 0.5, St.Side.BOTTOM);
-                    optionsMenu.addMenuItem(new PopupMenu.PopupMenuItem(`ID: ${container.name}`));
-                    optionsMenu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-
-                    const copyItem = new PopupMenu.PopupMenuItem('Copy name');
-                    copyItem.connect('activate', () => {
-                        this._copyToClipboard(container.name);
-                        optionsMenu.close();
-                    });
-                    optionsMenu.addMenuItem(copyItem);
-
-                    const upgradeItem = new PopupMenu.PopupMenuItem('Upgrade');
-                    upgradeItem.connect('activate', () => {
-                        this._upgradeContainer(container.name);
-                        optionsMenu.close();
-                    });
-                    optionsMenu.addMenuItem(upgradeItem);
-
-                    const ephemeralItem = new PopupMenu.PopupMenuItem('Ephemeral');
-                    ephemeralItem.connect('activate', () => {
-                        this._ephemeralContainer(container.name);
-                        optionsMenu.close();
-                    });
-                    optionsMenu.addMenuItem(ephemeralItem);
-
-                    optionsMenu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-
-                    const deleteItem = new PopupMenu.PopupMenuItem('Delete');
-                    deleteItem.label.add_style_class_name('error-label');
-                    deleteItem.connect('activate', () => {
-                        this._showDeleteConfirmation(container.name);
-                        optionsMenu.close();
-                    });
-                    optionsMenu.addMenuItem(deleteItem);
-
-                    optionsMenu.open();
-                });
             }
         }
 
@@ -219,54 +176,43 @@ class DistroboxIndicator extends PanelMenu.Button {
     }
 
     _showDeleteConfirmation(name) {
-        const dialog = new St.BoxLayout({
+        // ModalDialog is the supported API for this — it manages its own
+        // stage parenting internally, unlike a hand-created PopupMenu.
+        const dialog = new ModalDialog.ModalDialog();
+
+        const contentBox = new St.BoxLayout({
             vertical: true,
-            style: 'padding: 10px; spacing: 10px;',
+            style: 'spacing: 6px;',
         });
 
-        const titleLabel = new St.Label({
+        contentBox.add_child(new St.Label({
             text: `Delete '${name}'?`,
             style: 'font-weight: bold; font-size: 14px;',
-        });
-        dialog.add_child(titleLabel);
-
-        const messageLabel = new St.Label({
+        }));
+        contentBox.add_child(new St.Label({
             text: 'This action cannot be undone.',
             style: 'font-size: 12px;',
-        });
-        dialog.add_child(messageLabel);
+        }));
 
-        const buttonBox = new St.BoxLayout({
-            style: 'spacing: 8px; margin-top: 10px;',
-        });
+        dialog.contentLayout.add_child(contentBox);
 
-        const cancelButton = new St.Button({
-            label: 'Cancel',
-            style: 'padding: 6px 12px;',
-        });
-        buttonBox.add_child(cancelButton);
+        dialog.setButtons([
+            {
+                label: 'Cancel',
+                action: () => dialog.close(),
+                key: Clutter.KEY_Escape,
+            },
+            {
+                label: 'Delete',
+                action: () => {
+                    this._deleteContainer(name);
+                    dialog.close();
+                },
+                default: true,
+            },
+        ]);
 
-        const deleteButton = new St.Button({
-            label: 'Delete',
-            style: 'padding: 6px 12px; background-color: #c01c28; color: white;',
-        });
-        buttonBox.add_child(deleteButton);
-
-        dialog.add_child(buttonBox);
-
-        const popup = new PopupMenu.PopupMenu(this._icon, 0.5, St.Side.BOTTOM);
-        popup.box.add_child(dialog);
-
-        deleteButton.connect('clicked', () => {
-            this._deleteContainer(name);
-            popup.close();
-        });
-
-        cancelButton.connect('clicked', () => {
-            popup.close();
-        });
-
-        popup.open();
+        dialog.open();
     }
 
     _deleteContainer(name) {
