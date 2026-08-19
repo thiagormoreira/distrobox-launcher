@@ -10,13 +10,15 @@ import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import * as ModalDialog from 'resource:///org/gnome/shell/ui/modalDialog.js';
 
-// Maps each supported terminal to how it expects to receive the command to run.
+// Maps each supported terminal to how it expects to receive the argv to run.
+// Each entry returns a full argv array — never a shell string — so container
+// names and other values are passed as literal arguments, not parsed by a shell.
 const TERMINAL_LAUNCHERS = {
-    'ptyxis': (cmd) => `ptyxis -- ${cmd}`,
-    'gnome-terminal': (cmd) => `gnome-terminal -- ${cmd}`,
-    'kitty': (cmd) => `kitty -- ${cmd}`,
-    'alacritty': (cmd) => `alacritty -e ${cmd}`,
-    'wezterm': (cmd) => `wezterm start -- ${cmd}`,
+    'ptyxis': (argv) => ['ptyxis', '--', ...argv],
+    'gnome-terminal': (argv) => ['gnome-terminal', '--', ...argv],
+    'kitty': (argv) => ['kitty', '--', ...argv],
+    'alacritty': (argv) => ['alacritty', '-e', ...argv],
+    'wezterm': (argv) => ['wezterm', 'start', '--', ...argv],
 };
 
 const DistroboxIndicator = GObject.registerClass(
@@ -146,13 +148,12 @@ class DistroboxIndicator extends PanelMenu.Button {
     }
 
     _enterContainer(name) {
-        const cmd = this._wrapInTerminal(`distrobox enter ${name}`);
-        this._spawnCommand(cmd);
+        const argv = this._wrapInTerminal(['distrobox', 'enter', name]);
+        this._spawnCommand(argv);
     }
 
     _startContainer(name) {
-        const cmd = `podman start ${name}`;
-        this._spawnCommand(cmd, () => this._scheduleRefresh(2));
+        this._spawnCommand(['podman', 'start', name], () => this._scheduleRefresh(2));
     }
 
     _copyToClipboard(text) {
@@ -161,13 +162,13 @@ class DistroboxIndicator extends PanelMenu.Button {
     }
 
     _upgradeContainer(name) {
-        const cmd = this._wrapInTerminal(`distrobox upgrade ${name}`);
-        this._spawnCommand(cmd);
+        const argv = this._wrapInTerminal(['distrobox', 'upgrade', name]);
+        this._spawnCommand(argv);
     }
 
     _ephemeralContainer(name) {
-        const cmd = this._wrapInTerminal(`distrobox ephemeral ${name}`);
-        this._spawnCommand(cmd);
+        const argv = this._wrapInTerminal(['distrobox', 'ephemeral', name]);
+        this._spawnCommand(argv);
     }
 
     _scheduleRefresh(delaySeconds) {
@@ -220,42 +221,25 @@ class DistroboxIndicator extends PanelMenu.Button {
     }
 
     _deleteContainer(name) {
-        const cmd = `distrobox rm -f ${name}`;
-        this._spawnCommand(cmd, () => this._scheduleRefresh(1));
+        this._spawnCommand(['distrobox', 'rm', '-f', name], () => this._scheduleRefresh(1));
     }
 
     _stopContainer(name) {
-        const cmd = `distrobox stop -Y ${name}`;
-        this._spawnCommand(cmd, () => this._scheduleRefresh(2));
+        this._spawnCommand(['distrobox', 'stop', '-Y', name], () => this._scheduleRefresh(2));
     }
 
     _createNewDistrobox() {
-        const imageOptions = [
-            'registry.fedoraproject.org/fedora:latest',
-            'registry.fedoraproject.org/fedora:44',
-            'ubuntu:24.04',
-            'ubuntu:22.04',
-            'archlinux:latest',
-            'debian:12',
-            'almalinux:9',
-        ];
-        const imageLabels = [
-            'Fedora (latest)',
-            'Fedora 44',
-            'Ubuntu 24.04',
-            'Ubuntu 22.04',
-            'Arch Linux',
-            'Debian 12',
-            'AlmaLinux 9',
-        ];
-
-        const innerCmd = `bash -c "
+        // Passed as a single argv element to `bash -c`, never concatenated
+        // into a larger shell string, so no extra quoting/escaping is needed
+        // here — only the user's typed `$name` is shell-interpreted, and it's
+        // validated by the regex below before being used.
+        const script = `
 read -p 'Distrobox name: ' name
-if [ -z '\\$name' ]; then
+if [ -z "$name" ]; then
   echo 'Name is required'
   exit 1
 fi
-if ! [[ \\$name =~ ^[a-zA-Z0-9_-]+\\$ ]]; then
+if ! [[ $name =~ ^[a-zA-Z0-9_-]+$ ]]; then
   echo 'Invalid name (only letters, numbers, - and _ allowed)'
   exit 1
 fi
@@ -269,7 +253,7 @@ echo '6) Debian 12'
 echo '7) AlmaLinux 9'
 read -p 'Choice [1]: ' choice
 choice=\${choice:-1}
-case \\$choice in
+case $choice in
   1) image='registry.fedoraproject.org/fedora:latest';;
   2) image='registry.fedoraproject.org/fedora:44';;
   3) image='ubuntu:24.04';;
@@ -279,27 +263,24 @@ case \\$choice in
   7) image='almalinux:9';;
   *) echo 'Invalid choice'; exit 1;;
 esac
-echo 'Creating distrobox \\$name with \\$image...'
-distrobox create --name \\$name --image \\$image
+echo "Creating distrobox $name with $image..."
+distrobox create --name "$name" --image "$image"
 echo 'Done! Press Enter to close...'
 read
-"`;
-        const cmd = this._wrapInTerminal(innerCmd);
-        this._spawnCommand(cmd, () => this._scheduleRefresh(2));
+`;
+        const argv = this._wrapInTerminal(['bash', '-c', script]);
+        this._spawnCommand(argv, () => this._scheduleRefresh(2));
     }
 
-    _wrapInTerminal(innerCmd) {
+    _wrapInTerminal(argv) {
         const terminal = this._settings.get_string('terminal');
         const launcher = TERMINAL_LAUNCHERS[terminal];
-        return launcher ? launcher(innerCmd) : `${terminal} -- ${innerCmd}`;
+        return launcher ? launcher(argv) : [terminal, '--', ...argv];
     }
 
-    _spawnCommand(command, callback = null) {
+    _spawnCommand(argv, callback = null) {
         try {
-            const proc = Gio.Subprocess.new(
-                ['bash', '-c', command],
-                Gio.SubprocessFlags.NONE
-            );
+            const proc = Gio.Subprocess.new(argv, Gio.SubprocessFlags.NONE);
             if (callback) {
                 proc.wait_check_async(this._cancellable, (source, result) => {
                     try {
@@ -320,7 +301,7 @@ read
     async _refreshContainers() {
         try {
             const proc = Gio.Subprocess.new(
-                ['bash', '-c', 'distrobox list --no-color 2>/dev/null'],
+                ['distrobox', 'list', '--no-color'],
                 Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
             );
 
