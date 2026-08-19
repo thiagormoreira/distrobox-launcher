@@ -27,7 +27,9 @@ class DistroboxIndicator extends PanelMenu.Button {
         this._extension = extension;
         this._settings = extension.getSettings();
         this._refreshTimeoutId = null;
+        this._pendingTimeouts = new Set();
         this._containers = [];
+        this._cancellable = new Gio.Cancellable();
 
         // Panel icon — two pre-colored SVG variants swapped by running state,
         // since dynamic CSS recoloring is unreliable across icon themes.
@@ -150,12 +152,7 @@ class DistroboxIndicator extends PanelMenu.Button {
 
     _startContainer(name) {
         const cmd = `podman start ${name}`;
-        this._spawnCommand(cmd, () => {
-            GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 2, () => {
-                this._refreshContainers();
-                return GLib.SOURCE_REMOVE;
-            });
-        });
+        this._spawnCommand(cmd, () => this._scheduleRefresh(2));
     }
 
     _copyToClipboard(text) {
@@ -164,15 +161,22 @@ class DistroboxIndicator extends PanelMenu.Button {
     }
 
     _upgradeContainer(name) {
-        const terminal = this._settings.get_string('terminal');
         const cmd = this._wrapInTerminal(`distrobox upgrade ${name}`);
         this._spawnCommand(cmd);
     }
 
     _ephemeralContainer(name) {
-        const terminal = this._settings.get_string('terminal');
         const cmd = this._wrapInTerminal(`distrobox ephemeral ${name}`);
         this._spawnCommand(cmd);
+    }
+
+    _scheduleRefresh(delaySeconds) {
+        const id = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, delaySeconds, () => {
+            this._pendingTimeouts.delete(id);
+            this._refreshContainers();
+            return GLib.SOURCE_REMOVE;
+        });
+        this._pendingTimeouts.add(id);
     }
 
     _showDeleteConfirmation(name) {
@@ -217,26 +221,15 @@ class DistroboxIndicator extends PanelMenu.Button {
 
     _deleteContainer(name) {
         const cmd = `distrobox rm -f ${name}`;
-        this._spawnCommand(cmd, () => {
-            GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 1, () => {
-                this._refreshContainers();
-                return GLib.SOURCE_REMOVE;
-            });
-        });
+        this._spawnCommand(cmd, () => this._scheduleRefresh(1));
     }
 
     _stopContainer(name) {
         const cmd = `distrobox stop -Y ${name}`;
-        this._spawnCommand(cmd, () => {
-            GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 2, () => {
-                this._refreshContainers();
-                return GLib.SOURCE_REMOVE;
-            });
-        });
+        this._spawnCommand(cmd, () => this._scheduleRefresh(2));
     }
 
     _createNewDistrobox() {
-        const terminal = this._settings.get_string('terminal');
         const imageOptions = [
             'registry.fedoraproject.org/fedora:latest',
             'registry.fedoraproject.org/fedora:44',
@@ -292,12 +285,7 @@ echo 'Done! Press Enter to close...'
 read
 "`;
         const cmd = this._wrapInTerminal(innerCmd);
-        this._spawnCommand(cmd, () => {
-            GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 2, () => {
-                this._refreshContainers();
-                return GLib.SOURCE_REMOVE;
-            });
-        });
+        this._spawnCommand(cmd, () => this._scheduleRefresh(2));
     }
 
     _wrapInTerminal(innerCmd) {
@@ -313,11 +301,13 @@ read
                 Gio.SubprocessFlags.NONE
             );
             if (callback) {
-                proc.wait_check_async(null, (source, result) => {
+                proc.wait_check_async(this._cancellable, (source, result) => {
                     try {
                         source.wait_check_finish(result);
                     } catch (e) {
-                        logError(e, 'Distrobox Launcher');
+                        if (!e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
+                            logError(e, 'Distrobox Launcher');
+                        return;
                     }
                     callback();
                 });
@@ -335,7 +325,7 @@ read
             );
 
             const stdout = await new Promise((resolve, reject) => {
-                proc.communicate_utf8_async(null, null, (source, result) => {
+                proc.communicate_utf8_async(null, this._cancellable, (source, result) => {
                     try {
                         const [, stdout] = source.communicate_utf8_finish(result);
                         resolve(stdout);
@@ -378,7 +368,8 @@ read
             this._buildMenu();
 
         } catch (e) {
-            logError(e, 'Distrobox Launcher');
+            if (!e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
+                logError(e, 'Distrobox Launcher');
         }
     }
 
@@ -405,10 +396,16 @@ read
     }
 
     stop() {
+        this._cancellable.cancel();
+
         if (this._refreshTimeoutId) {
             GLib.source_remove(this._refreshTimeoutId);
             this._refreshTimeoutId = null;
         }
+        for (const id of this._pendingTimeouts) {
+            GLib.source_remove(id);
+        }
+        this._pendingTimeouts.clear();
         if (this._settingsChangedId) {
             this._settings.disconnect(this._settingsChangedId);
             this._settingsChangedId = null;

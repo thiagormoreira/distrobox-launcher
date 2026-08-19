@@ -1,8 +1,7 @@
 {
   "uuid": "distrobox-launcher@loganguns",
   "name": "Distrobox Launcher",
-  "description": "Quick access to your distroboxes from the top bar. Enter, start, and stop distroboxes with one click.",
-  "version": 1,
+  "description": "Quick access to your distroboxes from the top bar. Enter, start, and stop distroboxes with one click. Container names can be copied to the clipboard via an explicit menu action.",
   "shell-version": [
     "45",
     "46",
@@ -11,9 +10,6 @@
     "49",
     "50"
   ],
-  "url": "",
-  "settings-schema": "org.gnome.shell.extensions.distrobox-launcher",
-  "session-mode": [
-    "user"
-  ]
+  "url": "https://github.com/thiagormoreira/distrobox-launcher",
+  "settings-schema": "org.gnome.shell.extensions.distrobox-launcher"
 }
