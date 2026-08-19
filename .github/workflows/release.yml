@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Validate metadata.json
+        run: python -m json.tool metadata.json > /dev/null
+
+      - name: Package extension
+        run: make pack
+
+      # tree-sitter is pinned to match tree-sitter-javascript's ABI — the
+      # latest tree-sitter core (0.26.x) segfaults shexli on real-world JS.
+      # See memory/shexli_tree_sitter_segfault.md for the full diagnosis.
+      - name: Install shexli
+        run: pip install shexli==0.2.1 tree-sitter==0.25.0
+
+      - name: Lint packaged zip with shexli
+        run: |
+          shexli distrobox-launcher@loganguns.zip --format json | tee shexli-report.json
+          python -c "
+          import json, sys
+          report = json.load(open('shexli-report.json'))
+          errors = report['summary']['severity_counts'].get('error', 0)
+          if errors:
+              print(f'::error::shexli found {errors} error(s) — see report above')
+              sys.exit(1)
+          "
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: distrobox-launcher@loganguns.zip
+          generate_release_notes: true
