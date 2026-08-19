@@ -1,8 +1,13 @@
 import Adw from 'gi://Adw';
 import Gtk from 'gi://Gtk';
 import Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
 
 import { ExtensionPreferences } from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
+
+const PIX_KEY = 'loganguns@gmail.com';
+const KOFI_URL = 'https://ko-fi.com/loganguns';
+const GITHUB_SPONSORS_URL = 'https://github.com/sponsors/thiagormoreira';
 
 export default class DistroboxLauncherPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
@@ -125,33 +130,68 @@ export default class DistroboxLauncherPreferences extends ExtensionPreferences {
         // Support/Donations page
         const supportPage = new Adw.PreferencesPage({
             title: 'Support',
-            iconName: 'emblem-favorite-symbolic',
+            iconName: 'help-browser-symbolic',
         });
         window.add(supportPage);
 
         const donationGroup = new Adw.PreferencesGroup({
-            title: 'Help us grow',
-            description: 'Support the development of this extension',
+            title: 'Support the Project',
+            description: 'If this extension helps you manage your distroboxes, consider supporting its development',
         });
         supportPage.add(donationGroup);
 
         const pixRow = new Adw.ActionRow({
             title: 'PIX',
-            subtitle: 'Add your PIX key here',
+            subtitle: PIX_KEY,
         });
+        const pixCopyButton = new Gtk.Button({
+            iconName: 'edit-copy-symbolic',
+            valign: Gtk.Align.CENTER,
+            cssClasses: ['flat'],
+            tooltipText: 'Copy PIX key',
+        });
+        let pixResetTimeoutId = null;
+        pixCopyButton.connect('clicked', () => {
+            window.get_clipboard().set_text(PIX_KEY);
+            pixRow.subtitle = 'Key copied!';
+            if (pixResetTimeoutId) GLib.source_remove(pixResetTimeoutId);
+            pixResetTimeoutId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 2, () => {
+                pixRow.subtitle = PIX_KEY;
+                pixResetTimeoutId = null;
+                return GLib.SOURCE_REMOVE;
+            });
+        });
+        window.connect('close-request', () => {
+            if (pixResetTimeoutId) {
+                GLib.source_remove(pixResetTimeoutId);
+                pixResetTimeoutId = null;
+            }
+            return false;
+        });
+        pixRow.add_suffix(pixCopyButton);
         donationGroup.add(pixRow);
-
-        const paypalRow = new Adw.ActionRow({
-            title: 'PayPal',
-            subtitle: 'paypal.me/seu-usuario',
-        });
-        donationGroup.add(paypalRow);
 
         const kofiRow = new Adw.ActionRow({
             title: 'Ko-fi',
-            subtitle: 'ko-fi.com/seu-usuario',
+            subtitle: 'ko-fi.com/loganguns',
+            activatable: true,
+        });
+        kofiRow.add_suffix(new Gtk.Image({ iconName: 'external-link-symbolic' }));
+        kofiRow.connect('activated', () => {
+            Gtk.show_uri(window, KOFI_URL, 0);
         });
         donationGroup.add(kofiRow);
+
+        const sponsorsRow = new Adw.ActionRow({
+            title: 'GitHub Sponsors',
+            subtitle: 'github.com/sponsors/thiagormoreira',
+            activatable: true,
+        });
+        sponsorsRow.add_suffix(new Gtk.Image({ iconName: 'external-link-symbolic' }));
+        sponsorsRow.connect('activated', () => {
+            Gtk.show_uri(window, GITHUB_SPONSORS_URL, 0);
+        });
+        donationGroup.add(sponsorsRow);
 
         const licenseRow = new Adw.ActionRow({
             title: 'License',

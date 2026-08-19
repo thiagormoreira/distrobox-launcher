@@ -65,9 +65,9 @@ Access preferences from the extension menu:
 ## Support
 
 If you find this extension useful, consider supporting its development:
-- 💙 Ko-fi: ko-fi.com
-- 🅿️ PayPal: paypal.me
-- 🏦 PIX: (Brazil)
+- 💙 Ko-fi: [ko-fi.com/loganguns](https://ko-fi.com/loganguns)
+- 💜 GitHub Sponsors: [github.com/sponsors/thiagormoreira](https://github.com/sponsors/thiagormoreira)
+- 🏦 PIX (Brazil): `loganguns@gmail.com`
 
 ## License
 
