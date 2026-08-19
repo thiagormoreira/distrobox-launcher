@@ -12,6 +12,7 @@ schemas/gschemas.compiled: schemas/org.gnome.shell.extensions.$(NAME).gschema.xm
 	glib-compile-schemas schemas/
 
 pack:
+	@rm -f $(UUID).zip
 	@mkdir -p dist/schemas
 	@cp metadata.json extension.js prefs.js stylesheet.css dist/
 	@cp schemas/*.gschema.xml dist/schemas/
