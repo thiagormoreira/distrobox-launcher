@@ -16,7 +16,7 @@ export default class DistroboxLauncherPreferences extends ExtensionPreferences {
         // General page
         const page = new Adw.PreferencesPage({
             title: 'General',
-            iconName: 'dialog-information-symbolic',
+            iconName: 'preferences-other-symbolic',
         });
         window.add(page);
 
@@ -103,9 +103,11 @@ export default class DistroboxLauncherPreferences extends ExtensionPreferences {
         const aboutGroup = new Adw.PreferencesGroup();
         aboutPage.add(aboutGroup);
 
+        const meta = this.metadata;
+
         const titleRow = new Adw.ActionRow({
             title: 'Distrobox Launcher',
-            subtitle: 'v1.0',
+            subtitle: `v${meta.version ?? '1.0'}`,
         });
         aboutGroup.add(titleRow);
 
@@ -126,6 +128,12 @@ export default class DistroboxLauncherPreferences extends ExtensionPreferences {
             subtitle: 'loganguns@gmail.com',
         });
         aboutGroup.add(emailRow);
+
+        const licenseRow = new Adw.ActionRow({
+            title: 'License',
+            subtitle: 'MIT',
+        });
+        aboutGroup.add(licenseRow);
 
         // Support/Donations page
         const supportPage = new Adw.PreferencesPage({
@@ -193,10 +201,20 @@ export default class DistroboxLauncherPreferences extends ExtensionPreferences {
         });
         donationGroup.add(sponsorsRow);
 
-        const licenseRow = new Adw.ActionRow({
-            title: 'License',
-            subtitle: 'MIT License - Free to use and modify',
+        const docsGroup = new Adw.PreferencesGroup({
+            title: 'Documentation',
+            description: 'Learn more about the extension',
         });
-        donationGroup.add(licenseRow);
+        supportPage.add(docsGroup);
+
+        const githubLinkRow = new Adw.ActionRow({
+            title: 'Report an Issue',
+            activatable: true,
+        });
+        githubLinkRow.add_suffix(new Gtk.Image({ iconName: 'external-link-symbolic' }));
+        githubLinkRow.connect('activated', () => {
+            Gtk.show_uri(window, 'https://github.com/thiagormoreira/distrobox-launcher/issues', 0);
+        });
+        docsGroup.add(githubLinkRow);
     }
 }

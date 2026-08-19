@@ -2,6 +2,7 @@
   "uuid": "distrobox-launcher@loganguns",
   "name": "Distrobox Launcher",
   "description": "Quick access to your distroboxes from the top bar. Enter, start, and stop distroboxes with one click. Container names can be copied to the clipboard via an explicit menu action.",
+  "version": 1,
   "shell-version": [
     "45",
     "46",
